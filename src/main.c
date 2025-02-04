@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "iwdg.h"
+#include "rtc.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -66,52 +68,6 @@ int __io_putchar(int ch) //ustala output printf jako uart2
     return 1;
 }
 
-bool is_button_pressed(int button) {
-  switch (button) {
-  case 0:
-    if (HAL_GPIO_ReadPin(USER_BUTTON3_GPIO_Port, USER_BUTTON3_Pin) == GPIO_PIN_RESET) {
-    	HAL_Delay(50);
-    	while (true){
-    		if (HAL_GPIO_ReadPin(USER_BUTTON3_GPIO_Port, USER_BUTTON3_Pin) == GPIO_PIN_SET){
-    			HAL_Delay(50);
-    			break;
-    		}
-    	}
-      return true;
-    } else {
-      return false;
-    }
-  case 1:
-    if (HAL_GPIO_ReadPin(USER_BUTTON2_GPIO_Port, USER_BUTTON2_Pin) == GPIO_PIN_RESET) {
-    	HAL_Delay(50);
-    	while (true){
-    		if (HAL_GPIO_ReadPin(USER_BUTTON2_GPIO_Port, USER_BUTTON2_Pin) == GPIO_PIN_SET){
-    			HAL_Delay(50);
-    			break;
-    		}
-    	}
-      return true;
-    } else {
-      return false;
-    }
-  case 2:
-    if (HAL_GPIO_ReadPin(USER_BUTTON_GPIO_Port, USER_BUTTON_Pin) == GPIO_PIN_RESET) {
-    	HAL_Delay(50);
-    	    	while (true){
-    	    		if (HAL_GPIO_ReadPin(USER_BUTTON_GPIO_Port, USER_BUTTON_Pin) == GPIO_PIN_SET){
-    	    			HAL_Delay(50);
-    	    			break;
-    	    		}
-    	    	}
-      return true;
-    } else {
-      return false;
-    }
-
-  default:
-    return false;
-  }
-}
 /* USER CODE END 0 */
 
 /**
@@ -138,17 +94,29 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-uint8_t value;
-  char message[] = "Hello, world!\n";
-  HAL_UART_Transmit(&huart2,(uint8_t*) message, strlen(message), HAL_MAX_DELAY);
-  fflush(stdout);
+
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_IWDG_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
+  uint8_t value;
+  printf("Hello World!\n");
 
+  uint32_t timer_rtc = 0;
+  RTC_TimeTypeDef time = {0};
+  RTC_DateTypeDef date = {0};
+  HAL_RTC_SetTime(&hrtc, &time, RTC_FORMAT_BIN);
+
+  int i;
+
+  for (i = 0; i < 10; i++) {
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    HAL_Delay(100);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -158,8 +126,18 @@ uint8_t value;
     if (HAL_UART_Receive(&huart2, &value, 1, 0) == HAL_OK){
 		  line_append(value);
 	  }
+
 	  buttonPressDetect();
 	  ledLightMode();
+
+    if(hasTimedOut(1000, &timer_rtc)){
+      HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+      HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+      printf("RTC: %04d-%02d-%02d (%s), %02d:%02d:%02d\n", date.Year, date.Month, date.Date, getWeekdayName(date.WeekDay), time.Hours, time.Minutes, time.Seconds);
+    }
+
+    HAL_IWDG_Refresh(&hiwdg);
+    
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -178,13 +156,24 @@ void SystemClock_Config(void)
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
+  /** Configure LSE Drive Capability
+  */
+  HAL_PWR_EnableBkUpAccess();
+  __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI
+                              |RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -194,17 +183,18 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_RTC;
   PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();

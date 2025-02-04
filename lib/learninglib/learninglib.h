@@ -8,13 +8,19 @@
 
 #include <stdbool.h>
 
-/* UART FUNCTIONALITY */
+/* RTC functionality */
+bool hasTimedOut(uint32_t interval_ms, uint32_t *lastExecutionTime);
+const char* getWeekdayName(uint8_t weekday);
 
+
+
+/* UART FUNCTIONALITY */
 void line_append(uint8_t value);
+void UART_commands();
 
 /*	BUTTON FUNCTIONALITY	*/
 #define BOUNCE_TIME 40
-#define LINE_MAX_LENGTH 80
+#define UART_BUFFER_SIZE 80
 
 typedef void(*buttonFunction)();
 
@@ -46,7 +52,7 @@ static button_t BUTTON[] = {
 
 
 /* LED functionality */
-bool timePassed(int multiplier);
+bool LED_timePassed(int multiplier);
 void ledLightMode();
 void led_set(int led, bool turn_on);
 void ledOneColourMode();
@@ -87,10 +93,12 @@ static const int TOTAL_LEDS = sizeof(LED)/sizeof(LED[0]);
 static const int TOTAL_BUTTONS = sizeof(BUTTON)/sizeof(BUTTON[0]);
 
 static const int SWTICH_SPEED_ARR[] = {			//30 consecutive logarithmic values, multiplied by 10, integer precision
-        10, 11, 13, 15, 17, 19, 22, 25,
-        29, 33, 38, 43, 50, 57, 66, 75,
-        87, 100, 114, 131, 151, 172, 197,
-        225, 257, 294, 335, 382, 437, 500
+        500, 437, 382, 335, 294, 257,
+		225, 197, 172, 151, 131, 114,
+		100, 87, 75, 66, 57, 50,
+		43, 38, 33, 29, 25, 22,
+		19, 17, 15, 13, 11, 10
+
     };
 
 static const int SWITCH_SPEED_SIZE = sizeof(SWTICH_SPEED_ARR)/sizeof(SWTICH_SPEED_ARR[0]);
